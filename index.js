@@ -46,7 +46,7 @@ yargs.command('display [table]', 'show hobbyfarm', (yargs) => {
                                                 console.log('no data in table');
                                                 process.exit(0);
                                         } else { 
-                                                let data = await knex.select('name', 'total').table(argv.table);
+                                                let data = await knex.select().table(argv.table);
                                                 console.table(data);
                                                 process.exit(0);
                                         }
@@ -61,9 +61,7 @@ yargs.command('display [table]', 'show hobbyfarm', (yargs) => {
                         } else {
                                 console.log('no name was provided');
                         }
-                })
-                .help()
-                .argv;
+                });
 
 // add to table.
 yargs.command('add [table] [name] [count]', 'add new data to table',
@@ -83,6 +81,7 @@ yargs.command('add [table] [name] [count]', 'add new data to table',
                 });
         },
         async (argv) => {
+                let stamp = new Date();
                 let tableExists = await knex.schema.hasTable(argv.table);
                 if(!tableExists) {
                         console.log(`${argv.table} doesn't exist`);
@@ -90,7 +89,7 @@ yargs.command('add [table] [name] [count]', 'add new data to table',
                 } else {
                         try {
                                 console.log('insert into db');
-                                await knex.insert([{ name: argv.name, total: argv.count }]).into(argv.table);
+                                await knex.insert([{ name: argv.name, total: argv.count }]).into(argv.table).onConflict('name').merge({ total: argv.count, updated_at: stamp.toISOString() })
                                 process.exit(0);
 
                         } catch (e) {
@@ -100,8 +99,33 @@ yargs.command('add [table] [name] [count]', 'add new data to table',
 
                         }
                 }
-        })
+        });
 
+yargs.command('purge [table]', 'purge the table',
+        (yargs) => {
+                yargs.positional('table', {
+                        type: 'string',
+                        describe: 'the table to purge'
+                });
+        },
+        async (argv) => {
+                let tableExists = await knex.schema.hasTable(argv.table);
+                if(!tableExists) {
+                        console.log(`${argv.table} doesn' exist`);
+                        process.exit(0);
+                } else {
+                        try {
+                                console.log('purging table...');
+                                let purged = await knex.schema.dropTable(argv.table);
+                                console.log(purged);
+                                process.exit(0);
+                        } catch (e) {
+                                console.error(e);
+                                process.exit(0);
+                        }
+                }
+        });
+                
 // initialize hobbyfarm.
 yargs.command('init', 'initialize hobbyfarm', () => {}, async (argv) => {
 
@@ -110,9 +134,11 @@ yargs.command('init', 'initialize hobbyfarm', () => {}, async (argv) => {
                 if(!tableExists) {
                         let newTable = await knex.schema.createTable('seeds', t => {
                                         t.increments('id').primary();
-                                        t.string('name', 100);
+                                        t.text('name', 100);
+                                        t.unique('name');
                                         t.text('bio');
                                         t.integer('total');
+                                        t.timestamps(false, true);
                         });
                         console.log(newTable);
                         process.exit(0);
